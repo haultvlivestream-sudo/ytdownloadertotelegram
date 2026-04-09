@@ -1,0 +1,39 @@
+name: YouTube to Telegram (With Cookies)
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_url:
+        description: 'Masukkan Link Video YouTube'
+        required: true
+
+jobs:
+  download_and_upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Create Cookies File
+        run: |
+          echo "${{ secrets.YT_COOKIES }}" > cookies.txt
+
+      - name: Install yt-dlp
+        run: |
+          python -m pip install --upgrade pip
+          pip install yt-dlp
+
+      - name: Download Video
+        run: |
+          # yt-dlp sekarang menggunakan file cookies.txt
+          yt-dlp --cookies cookies.txt \
+          -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
+          --max-filesize 2G \
+          "${{ github.event.inputs.video_url }}" \
+          -o "video.mp4"
+
+      - name: Upload to Telegram
+        run: |
+          # Mengirim video ke Telegram
+          curl -v -F "video=@video.mp4" \
+          "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendVideo?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}"
