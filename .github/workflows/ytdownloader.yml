@@ -1,4 +1,4 @@
-name: YouTube to Telegram (Nightly Engine)
+name: YouTube to Telegram (Ultimate 2GB)
 
 on:
   workflow_dispatch:
@@ -11,43 +11,68 @@ jobs:
   download_and_upload:
     runs-on: ubuntu-latest
     steps:
-      - name: 1. Checkout Repository
+      - name: 1. Checkout
         uses: actions/checkout@v4
 
-      - name: 2. Install Node.js
+      - name: 2. Install Node.js & Python
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: 3. Install Nightly Tools
+      - name: 3. Install Tools & Telethon
         run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg jq curl
-          # Pakai cara download yt-dlp yang sama dengan script relay kamu
+          sudo apt-get update && sudo apt-get install -y ffmpeg
           sudo curl -L https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
-          yt-dlp -U
+          pip install telethon cryptg
 
       - name: 4. Download Video
         env:
           YT_COOKIES: ${{ secrets.YT_COOKIES }}
         run: |
           echo "$YT_COOKIES" > cookies.txt
-          
-          # Pakai argumen persis seperti script relay kamu
           yt-dlp --cookies cookies.txt \
                  --js-runtime node \
-                 --force-ipv4 \
-                 --no-playlist \
-                 --extractor-args "youtube:player_client=mweb,web" \
                  -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
                  --merge-output-format mp4 \
                  "${{ github.event.inputs.video_url }}" \
-                 -o "video_to_send.mp4"
+                 -o "video_untuk_telegram.mp4"
 
-      - name: 5. Upload to Telegram
+      - name: 5. Upload via Telethon (Support 2GB)
+        env:
+          API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          # Menggunakan Chat ID dan Token kamu
-          # Kita pakai opsi -S (silent) agar log tidak penuh tapi tetap kirim file
-          curl -v -F "video=@video_to_send.mp4" \
-          "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendVideo?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}"
+          python - <<EOF
+          import os
+          import asyncio
+          from telethon import TelegramClient
+
+          # Mengambil data dari Secret GitHub
+          api_id = int(os.environ['API_ID'])
+          api_hash = os.environ['API_HASH']
+          bot_token = os.environ['BOT_TOKEN']
+          chat_id = int(os.environ['CHAT_ID'])
+          file_path = 'video_untuk_telegram.mp4'
+
+          async def main():
+              # Login sebagai Bot tapi pakai protokol Telegram Client (bisa kirim 2GB)
+              async with TelegramClient('bot_session', api_id, api_hash).start(bot_token=bot_token) as client:
+                  print(f"Mengirim {file_path} ke Chat ID {chat_id}...")
+                  await client.send_file(
+                      chat_id, 
+                      file_path, 
+                      supports_streaming=True, 
+                      caption="✅ Video siap ditonton offline!",
+                      progress_callback=lambda d, t: print(f"Upload: {d/t*100:.2f}%")
+                  )
+                  print("Upload Selesai!")
+
+          if os.path.exists(file_path):
+              asyncio.run(main())
+          else:
+              print("File video tidak ditemukan!")
+          EOF
           
