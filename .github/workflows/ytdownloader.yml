@@ -1,4 +1,4 @@
-name: YouTube to Telegram (Final Fix)
+name: YouTube to Telegram (Nightly Engine)
 
 on:
   workflow_dispatch:
@@ -11,46 +11,43 @@ jobs:
   download_and_upload:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: 1. Checkout Repository
         uses: actions/checkout@v4
 
-      # 1. Pasang Node.js di awal (untuk memecahkan JS Challenge YouTube)
-      - name: Setup Node.js
+      - name: 2. Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
 
-      # 2. Update Python dan pip
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      # 3. Install yt-dlp versi Master (terbaru) & FFmpeg
-      - name: Install Tools
+      - name: 3. Install Nightly Tools
         run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg
-          python -m pip install --upgrade pip
-          pip install --no-cache-dir yt-dlp
+          sudo apt-get update && sudo apt-get install -y ffmpeg jq curl
+          # Pakai cara download yt-dlp yang sama dengan script relay kamu
+          sudo curl -L https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod a+rx /usr/local/bin/yt-dlp
+          yt-dlp -U
 
-      - name: Create Cookies File
+      - name: 4. Download Video
+        env:
+          YT_COOKIES: ${{ secrets.YT_COOKIES }}
         run: |
-          echo "${{ secrets.YT_COOKIES }}" > cookies.txt
-
-      # 4. Proses Download dengan argumen tambahan untuk bypass
-      - name: Download Video
-        run: |
+          echo "$YT_COOKIES" > cookies.txt
+          
+          # Pakai argumen persis seperti script relay kamu
           yt-dlp --cookies cookies.txt \
-          --extractor-args "youtube:player_client=android,web" \
-          -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
-          --merge-output-format mp4 \
-          --no-check-certificate \
-          "${{ github.event.inputs.video_url }}" \
-          -o "video.mp4"
+                 --js-runtime node \
+                 --force-ipv4 \
+                 --no-playlist \
+                 --extractor-args "youtube:player_client=mweb,web" \
+                 -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
+                 --merge-output-format mp4 \
+                 "${{ github.event.inputs.video_url }}" \
+                 -o "video_to_send.mp4"
 
-      # 5. Upload ke Telegram
-      - name: Upload to Telegram
+      - name: 5. Upload to Telegram
         run: |
-          curl -v -F "video=@video.mp4" \
+          # Menggunakan Chat ID dan Token kamu
+          # Kita pakai opsi -S (silent) agar log tidak penuh tapi tetap kirim file
+          curl -v -F "video=@video_to_send.mp4" \
           "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendVideo?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}"
           
