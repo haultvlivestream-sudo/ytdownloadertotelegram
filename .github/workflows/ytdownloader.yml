@@ -1,4 +1,4 @@
-name: YouTube to Telegram (Ultimate 2GB)
+name: YouTube to Telegram Ultimate (2GB Support)
 
 on:
   workflow_dispatch:
@@ -11,34 +11,41 @@ jobs:
   download_and_upload:
     runs-on: ubuntu-latest
     steps:
-      - name: 1. Checkout
+      - name: 1. Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 2. Install Node.js & Python
+      - name: 2. Install Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: 3. Install Tools & Telethon
         run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg
+          sudo apt-get update && sudo apt-get install -y ffmpeg jq curl
+          # Mengambil yt-dlp versi Nightly (Paling sakti tembus proteksi YT)
           sudo curl -L https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
+          yt-dlp -U
+          # Install library untuk upload file besar
           pip install telethon cryptg
 
-      - name: 4. Download Video
+      - name: 4. Download Video dari YouTube
         env:
           YT_COOKIES: ${{ secrets.YT_COOKIES }}
         run: |
           echo "$YT_COOKIES" > cookies.txt
+          # Logika download: MP4, Bypass JS Challenge, No Playlist
           yt-dlp --cookies cookies.txt \
                  --js-runtime node \
+                 --force-ipv4 \
+                 --no-playlist \
+                 --extractor-args "youtube:player_client=mweb,web" \
                  -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
                  --merge-output-format mp4 \
                  "${{ github.event.inputs.video_url }}" \
-                 -o "video_untuk_telegram.mp4"
+                 -o "video_untuk_dikirim.mp4"
 
-      - name: 5. Upload via Telethon (Support 2GB)
+      - name: 5. Upload ke Telegram (Bypass 50MB Limit)
         env:
           API_ID: ${{ secrets.TELEGRAM_API_ID }}
           API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
@@ -50,29 +57,34 @@ jobs:
           import asyncio
           from telethon import TelegramClient
 
-          # Mengambil data dari Secret GitHub
-          api_id = int(os.environ['API_ID'])
-          api_hash = os.environ['API_HASH']
-          bot_token = os.environ['BOT_TOKEN']
-          chat_id = int(os.environ['CHAT_ID'])
-          file_path = 'video_untuk_telegram.mp4'
-
           async def main():
-              # Login sebagai Bot tapi pakai protokol Telegram Client (bisa kirim 2GB)
-              async with TelegramClient('bot_session', api_id, api_hash).start(bot_token=bot_token) as client:
-                  print(f"Mengirim {file_path} ke Chat ID {chat_id}...")
+              # Ambil kredensial dari environment
+              api_id = int(os.environ['API_ID'])
+              api_hash = os.environ['API_HASH']
+              bot_token = os.environ['BOT_TOKEN']
+              chat_id = int(os.environ['CHAT_ID'])
+              file_path = 'video_untuk_dikirim.mp4'
+
+              if not os.path.exists(file_path):
+                  print("❌ Error: File video tidak ditemukan!")
+                  return
+
+              # Inisialisasi client Telegram
+              client = TelegramClient('bot_session', api_id, api_hash)
+              await client.start(bot_token=bot_token)
+              
+              async with client:
+                  print(f"🚀 Memulai upload {file_path} ke Chat ID {chat_id}...")
                   await client.send_file(
                       chat_id, 
                       file_path, 
                       supports_streaming=True, 
-                      caption="✅ Video siap ditonton offline!",
-                      progress_callback=lambda d, t: print(f"Upload: {d/t*100:.2f}%")
+                      caption="✅ Video Berhasil Didownload!\n\nSiap ditonton offline tanpa makan memori HP.",
+                      progress_callback=lambda d, t: print(f"📡 Progress Upload: {d/t*100:.2f}%")
                   )
-                  print("Upload Selesai!")
+                  print("✨ Selesai! Cek Telegram kamu sekarang.")
 
-          if os.path.exists(file_path):
+          if __name__ == '__main__':
               asyncio.run(main())
-          else:
-              print("File video tidak ditemukan!")
           EOF
           
